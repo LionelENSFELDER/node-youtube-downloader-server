@@ -134,3 +134,14 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# ytdl-core cache files
+*-base.js
+*.cache
+*.tmp
+
+# Audio files
+*.mp3
+*.wav
+*.m4a
+*.flac
