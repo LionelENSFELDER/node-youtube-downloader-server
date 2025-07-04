@@ -1,129 +1,161 @@
-// app.js - Interface PWA YouTube Downloader
+// app.js - Correction spéciale pour iOS Safari
 
-class YouTubeDownloader {
-  constructor() {
-    this.init();
+document.addEventListener("DOMContentLoaded", () => {
+  console.log("App initialisée");
+
+  const form = document.getElementById("download-form");
+  const urlInput = document.getElementById("url-input");
+  const downloadBtn = document.getElementById("download-btn");
+
+  if (!form) {
+    console.error("Formulaire non trouvé");
+    return;
   }
 
-  init() {
-    this.setupEventListeners();
-    this.checkForSharedUrl();
-    this.registerServiceWorker();
-  }
-
-  setupEventListeners() {
-    const form = document.getElementById("download-form");
-    const urlInput = document.getElementById("url-input");
-    const downloadBtn = document.getElementById("download-btn");
-    const pasteBtn = document.getElementById("paste-btn");
-
-    if (form) {
-      form.addEventListener("submit", (e) => this.handleSubmit(e));
-    }
-
-    if (pasteBtn) {
-      pasteBtn.addEventListener("click", () => this.pasteFromClipboard());
-    }
-
-    if (urlInput) {
-      urlInput.addEventListener("input", () => this.validateUrl());
-    }
-  }
-
-  // Vérifier si une URL a été partagée
-  checkForSharedUrl() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const sharedUrl = urlParams.get("url");
-
-    if (sharedUrl) {
-      const urlInput = document.getElementById("url-input");
-      if (urlInput) {
-        urlInput.value = decodeURIComponent(sharedUrl);
-        this.validateUrl();
-      }
-    }
-  }
-
-  // Coller depuis le presse-papier
-  async pasteFromClipboard() {
-    try {
-      const text = await navigator.clipboard.readText();
-      const urlInput = document.getElementById("url-input");
-      if (urlInput) {
-        urlInput.value = text;
-        this.validateUrl();
-      }
-    } catch (err) {
-      console.error("Erreur lecture presse-papier:", err);
-      this.showMessage("Impossible de lire le presse-papier", "error");
-    }
-  }
-
-  // Valider l'URL YouTube
-  validateUrl() {
-    const urlInput = document.getElementById("url-input");
-    const downloadBtn = document.getElementById("download-btn");
-
-    if (!urlInput || !downloadBtn) return;
-
-    const url = urlInput.value.trim();
-    const isValid = this.isValidYouTubeUrl(url);
-
-    downloadBtn.disabled = !isValid;
-
-    if (url && !isValid) {
-      this.showMessage("URL YouTube invalide", "error");
-    } else {
-      this.hideMessage();
-    }
-  }
-
-  // Vérifier si l'URL est valide
-  isValidYouTubeUrl(url) {
-    const patterns = [
-      /^https?:\/\/(www\.)?youtube\.com\/watch\?v=[\w-]+/,
-      /^https?:\/\/youtu\.be\/[\w-]+/,
-      /^https?:\/\/(www\.)?youtube\.com\/embed\/[\w-]+/,
-    ];
-
-    return patterns.some((pattern) => pattern.test(url));
-  }
-
-  // Gérer la soumission du formulaire
-  async handleSubmit(e) {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    console.log("Formulaire soumis");
 
-    const urlInput = document.getElementById("url-input");
     const url = urlInput.value.trim();
+    console.log("URL saisie:", url);
 
-    if (!this.isValidYouTubeUrl(url)) {
-      this.showMessage("URL YouTube invalide", "error");
+    if (!url) {
+      alert("Veuillez saisir une URL");
       return;
     }
 
-    this.setLoading(true);
+    downloadBtn.disabled = true;
+    downloadBtn.textContent = "Traitement...";
 
     try {
-      // Étape 1: Récupérer les informations de la vidéo
-      const videoInfo = await this.getVideoInfo(url);
+      console.log("Envoi vers /api/info...");
 
+      const infoResponse = await fetch("/api/info", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url }),
+      });
+
+      console.log("Réponse info:", infoResponse.status);
+
+      if (!infoResponse.ok) {
+        const errorData = await infoResponse.json();
+        console.error("Erreur info:", errorData);
+        alert(`Erreur: ${errorData.error}`);
+        return;
+      }
+
+      const videoInfo = await infoResponse.json();
+      console.log("Info vidéo:", videoInfo);
+
+      // Afficher les infos de la vidéo
       if (videoInfo.success) {
-        this.displayVideoInfo(videoInfo.video);
+        const infoDiv = document.getElementById("video-info");
+        if (infoDiv) {
+          infoDiv.innerHTML = `
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <h3 style="margin: 0 0 10px 0; color: #333;">${
+                videoInfo.video.title
+              }</h3>
+              <p style="margin: 5px 0; color: #666;">👤 ${
+                videoInfo.video.author
+              }</p>
+              <p style="margin: 5px 0; color: #666;">⏱️ ${Math.floor(
+                videoInfo.video.duration / 60
+              )}:${(videoInfo.video.duration % 60)
+            .toString()
+            .padStart(2, "0")}</p>
+              <div id="download-instructions" style="margin-top: 15px; padding: 10px; background: #e3f2fd; border-radius: 5px;">
+                <p style="margin: 0; font-size: 14px; color: #1976d2;">
+                  📱 <strong>iPhone/iPad :</strong> Le téléchargement va s'ouvrir dans un nouvel onglet. 
+                  Appuyez longuement sur l'écran et sélectionnez "Télécharger" ou "Enregistrer dans Fichiers".
+                </p>
+              </div>
+            </div>
+          `;
+          infoDiv.style.display = "block";
+        }
+      }
 
-        // Étape 2: Lancer le téléchargement
-        await this.downloadAudio(url);
+      // Détecter le type d'appareil
+      const userAgent = navigator.userAgent;
+      const isIOS = /iPad|iPhone|iPod/.test(userAgent);
+      const isAndroid = /Android/.test(userAgent);
+      const isSafari = /Safari/.test(userAgent) && !/Chrome/.test(userAgent);
+
+      console.log("Appareil détecté:", { isIOS, isAndroid, isSafari });
+
+      if (isIOS) {
+        // Méthode spéciale pour iOS
+        await handleIOSDownload(url, videoInfo.video.title);
+      } else {
+        // Méthode pour Android et desktop
+        await handleStandardDownload(url, videoInfo.video.title);
       }
     } catch (error) {
-      console.error("Erreur:", error);
-      this.showMessage("Erreur lors du traitement", "error");
+      console.error("Erreur complète:", error);
+      alert(`Erreur: ${error.message}`);
     } finally {
-      this.setLoading(false);
+      downloadBtn.disabled = false;
+      downloadBtn.textContent = "Télécharger";
     }
-  }
+  });
 
-  // Récupérer les informations de la vidéo
-  async getVideoInfo(url) {
-    const response = await fetch("/api/info", {
+  // Fonction pour coller depuis le presse-papier
+  const pasteBtn = document.getElementById("paste-btn");
+  if (pasteBtn) {
+    pasteBtn.addEventListener("click", async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        urlInput.value = text;
+        console.log("URL collée:", text);
+      } catch (err) {
+        console.error("Erreur presse-papier:", err);
+        const userInput = prompt("Collez votre URL YouTube ici:");
+        if (userInput) {
+          urlInput.value = userInput;
+        }
+      }
+    });
+  }
+});
+
+// Fonction spéciale pour iOS
+async function handleIOSDownload(url, title) {
+  console.log("Gestion téléchargement iOS");
+
+  // Créer un lien direct qui force le téléchargement
+  const downloadUrl = `/api/download-ios?url=${encodeURIComponent(url)}`;
+
+  // Méthode 1: Ouvrir dans nouvel onglet avec instructions
+  const newWindow = window.open(downloadUrl, "_blank");
+
+  // Instructions détaillées pour l'utilisateur
+  showIOSInstructions(title);
+
+  // Méthode 2: Tentative de téléchargement direct après un délai
+  setTimeout(() => {
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = `${title
+      .replace(/[^\w\s-]/gi, "")
+      .replace(/\s+/g, "_")}.m4a`;
+    link.style.display = "none";
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, 2000);
+}
+
+// Fonction pour Android et desktop
+async function handleStandardDownload(url, title) {
+  console.log("Gestion téléchargement standard");
+
+  try {
+    const response = await fetch("/api/download", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -135,182 +167,80 @@ class YouTubeDownloader {
       throw new Error(`Erreur HTTP: ${response.status}`);
     }
 
-    return await response.json();
-  }
+    const contentDisposition = response.headers.get("Content-Disposition");
+    let filename = "audio.m4a";
 
-  // Télécharger l'audio
-  async downloadAudio(url) {
-    try {
-      const response = await fetch("/api/download", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ url }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Erreur HTTP: ${response.status}`);
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="(.+)"/);
+      if (match) {
+        filename = match[1];
       }
-
-      // Récupérer le nom du fichier depuis les headers
-      const contentDisposition = response.headers.get("Content-Disposition");
-      let filename = "audio.m4a";
-
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename="(.+)"/);
-        if (match) {
-          filename = match[1];
-        }
-      }
-
-      // Créer un blob et déclencher le téléchargement
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      window.URL.revokeObjectURL(downloadUrl);
-
-      this.showMessage("Téléchargement terminé !", "success");
-    } catch (error) {
-      console.error("Erreur téléchargement:", error);
-      this.showMessage("Erreur lors du téléchargement", "error");
     }
+
+    const blob = await response.blob();
+    console.log("Blob reçu, taille:", blob.size);
+
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = filename;
+
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    window.URL.revokeObjectURL(downloadUrl);
+    alert("Téléchargement terminé !");
+  } catch (error) {
+    console.error("Erreur téléchargement:", error);
+    alert(`Erreur de téléchargement: ${error.message}`);
   }
+}
 
-  // Afficher les informations de la vidéo
-  displayVideoInfo(video) {
-    const infoDiv = document.getElementById("video-info");
-    if (!infoDiv) return;
-
-    const duration = this.formatDuration(video.duration);
-
-    infoDiv.innerHTML = `
-      <div class="video-card">
-        <h3>${this.escapeHtml(video.title)}</h3>
-        <p><strong>Auteur:</strong> ${this.escapeHtml(video.author)}</p>
-        <p><strong>Durée:</strong> ${duration}</p>
-        <p><strong>Vues:</strong> ${this.formatNumber(video.viewCount)}</p>
+// Instructions détaillées pour iOS
+function showIOSInstructions(title) {
+  const instructionsDiv = document.getElementById("download-instructions");
+  if (instructionsDiv) {
+    instructionsDiv.innerHTML = `
+      <div style="background: #ff9800; color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+        <h4 style="margin: 0 0 10px 0;">📱 Instructions iOS/Safari :</h4>
+        <ol style="margin: 0; padding-left: 20px; line-height: 1.6;">
+          <li>Un nouvel onglet va s'ouvrir avec votre fichier audio</li>
+          <li><strong>Appuyez longuement</strong> sur l'écran (pas sur les boutons)</li>
+          <li>Sélectionnez <strong>"Télécharger le fichier lié"</strong> ou <strong>"Enregistrer dans Fichiers"</strong></li>
+          <li>Le fichier sera sauvé dans votre dossier Téléchargements ou Fichiers</li>
+        </ol>
+        <p style="margin: 10px 0 0 0; font-size: 12px; opacity: 0.9;">
+          💡 Si ça ne marche pas, essayez d'utiliser l'app Firefox ou Chrome sur iOS
+        </p>
       </div>
     `;
-
-    infoDiv.style.display = "block";
   }
 
-  // Formater la durée en minutes:secondes
-  formatDuration(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  }
-
-  // Formater les nombres (ex: 1234567 -> 1,234,567)
-  formatNumber(num) {
-    return new Intl.NumberFormat("fr-FR").format(num);
-  }
-
-  // Échapper le HTML
-  escapeHtml(text) {
-    const div = document.createElement("div");
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  // Gérer l'état de chargement
-  setLoading(isLoading) {
-    const downloadBtn = document.getElementById("download-btn");
-    const spinner = document.getElementById("loading-spinner");
-
-    if (downloadBtn) {
-      downloadBtn.disabled = isLoading;
-      downloadBtn.textContent = isLoading ? "Traitement..." : "Télécharger";
-    }
-
-    if (spinner) {
-      spinner.style.display = isLoading ? "block" : "none";
-    }
-  }
-
-  // Afficher un message
-  showMessage(text, type = "info") {
-    const messageDiv = document.getElementById("message");
-    if (!messageDiv) return;
-
-    messageDiv.textContent = text;
-    messageDiv.className = `message ${type}`;
-    messageDiv.style.display = "block";
-
-    // Masquer automatiquement après 5 secondes
-    setTimeout(() => {
-      this.hideMessage();
-    }, 5000);
-  }
-
-  // Masquer le message
-  hideMessage() {
-    const messageDiv = document.getElementById("message");
-    if (messageDiv) {
-      messageDiv.style.display = "none";
-    }
-  }
-
-  // Enregistrer le service worker
-  async registerServiceWorker() {
-    if ("serviceWorker" in navigator) {
-      try {
-        const registration = await navigator.serviceWorker.register("/sw.js");
-        console.log("Service Worker enregistré:", registration);
-      } catch (error) {
-        console.error("Erreur Service Worker:", error);
-      }
-    }
-  }
-}
-
-// Initialiser l'application quand le DOM est prêt
-document.addEventListener("DOMContentLoaded", () => {
-  new YouTubeDownloader();
-});
-
-// Gérer l'installation de la PWA
-let deferredPrompt;
-
-window.addEventListener("beforeinstallprompt", (e) => {
-  // Empêcher l'affichage automatique
-  e.preventDefault();
-  deferredPrompt = e;
-
-  // Afficher le bouton d'installation
-  const installBtn = document.getElementById("install-btn");
-  if (installBtn) {
-    installBtn.style.display = "block";
-    installBtn.addEventListener("click", () => {
-      installPWA();
+  // Notification système (si supportée)
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification("YouTube Downloader", {
+      body: `Téléchargement de "${title}" en cours...`,
+      icon: "/icons/icon-192x192.png",
     });
   }
-});
+}
 
-// Installer la PWA
-async function installPWA() {
-  if (deferredPrompt) {
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-
-    if (outcome === "accepted") {
-      console.log("PWA installée");
-    }
-
-    deferredPrompt = null;
-
-    const installBtn = document.getElementById("install-btn");
-    if (installBtn) {
-      installBtn.style.display = "none";
-    }
+// Demander permission pour les notifications
+function requestNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
   }
 }
+
+// Test API
+function testAPI() {
+  fetch("/api/test")
+    .then((response) => response.json())
+    .then((data) => console.log("Test API:", data))
+    .catch((error) => console.error("Erreur test API:", error));
+}
+
+// Initialisation
+testAPI();
+requestNotificationPermission();
