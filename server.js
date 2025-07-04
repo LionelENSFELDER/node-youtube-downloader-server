@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const ytdl = require("@distube/ytdl-core");
+const path = require("path");
 
 const app = express();
 const PORT = 3001;
@@ -17,6 +18,13 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+// Servir les fichiers statiques (interface PWA)
+app.use(express.static(path.join(__dirname, "public")));
+
+// Configuration EJS pour les templates (optionnel)
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
+
 // Logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
@@ -26,8 +34,25 @@ app.use((req, res, next) => {
   next();
 });
 
-// Route de test
+// Route principale - servir l'interface PWA
 app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+// Route de partage PWA
+app.get("/share-target", (req, res) => {
+  const sharedUrl = req.query.shared_url || req.query.url;
+
+  // Option 1: Rediriger vers l'interface avec l'URL en paramètre
+  if (sharedUrl) {
+    res.redirect(`/?url=${encodeURIComponent(sharedUrl)}`);
+  } else {
+    res.redirect("/");
+  }
+});
+
+// Route de test API
+app.get("/api/test", (req, res) => {
   res.json({
     message: "API YouTube Downloader avec @distube/ytdl-core",
     status: "running",
@@ -35,15 +60,8 @@ app.get("/", (req, res) => {
   });
 });
 
-app.get("/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "Serveur @distube/ytdl-core fonctionnel",
-  });
-});
-
 // Route d'informations vidéo
-app.post("/info", async (req, res) => {
+app.post("/api/info", async (req, res) => {
   try {
     const { url } = req.body;
 
@@ -130,7 +148,7 @@ app.post("/info", async (req, res) => {
 });
 
 // Route de téléchargement
-app.post("/download", async (req, res) => {
+app.post("/api/download", async (req, res) => {
   try {
     const { url } = req.body;
 
@@ -207,6 +225,7 @@ app.post("/download", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
   console.log(`📦 Utilise @distube/ytdl-core`);
+  console.log(`🌐 Interface PWA disponible sur http://localhost:${PORT}`);
 });
 
 module.exports = app;
